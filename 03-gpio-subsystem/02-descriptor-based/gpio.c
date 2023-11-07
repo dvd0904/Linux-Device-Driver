@@ -46,6 +46,7 @@ static struct platform_driver mypdrv = {
         .owner = THIS_MODULE,
     },
 };
+
 module_platform_driver(mypdrv);
 
 MODULE_LICENSE("GPL");

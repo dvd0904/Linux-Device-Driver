@@ -64,14 +64,14 @@ static struct file_operations fops = {
 /* This function will be called when we open the Device file */
 static int m_open(struct inode *inode, struct file *file)
 {
-    pr_info("System call open() called...!!!\n");
+    pr_info("[DAI] System call open() called...!!!\n");
     return 0;
 }
 
 /* This function will be called when we close the Device file */
 static int m_release(struct inode *inode, struct file *file)
 {
-    pr_info("System call close() called...!!!\n");
+    pr_info("[DAI] System call close() called...!!!\n");
     return 0;
 }
 
@@ -79,7 +79,7 @@ static int m_release(struct inode *inode, struct file *file)
 static ssize_t m_read(struct file *filp, char __user *user_buf, size_t size, loff_t *offset)
 {
     size_t to_read;
-    pr_info("System call read() called...!!!\n");
+    pr_info("[DAI] System call read() called...!!!\n");
 
     /* Check size */
     to_read = (size > mdev.size - *offset) ? (mdev.size - *offset) : size;
@@ -98,22 +98,22 @@ static ssize_t m_read(struct file *filp, char __user *user_buf, size_t size, lof
 static ssize_t m_write(struct file *filp, const char __user *user_buf, size_t size, loff_t *offset)
 {
     size_t to_write;
-    pr_info("System call write() called...!!!\n");
+    pr_info("[DAI] System call write() called...!!!\n");
 
     /* Check if number of bytes to write is bigger than MAX bytes */
-    to_write = (size + *offset > NPAGES * PAGE_SIZE) ? (NPAGES * PAGE_SIZE - *offset) : size;
+    to_write = (size + *offset > PAGE_SIZE * NPAGES) ? (PAGE_SIZE * NPAGES - *offset) : size;
 
     /* Copy from user buffer to mapped aread */
-    memset(mdev.kmalloc_ptr, 0, NPAGES * PAGE_SIZE);
+    memset(mdev.kmalloc_ptr, 0, PAGE_SIZE * NPAGES);
     /* use copy_from_user() to copy from user buffer to kernel
        this function is similar to strcpy in user space
     */
     if (copy_from_user(mdev.kmalloc_ptr + *offset, user_buf, to_write) != 0)
         return -EFAULT;
 
-    pr_info("Data from user: %s\n", mdev.kmalloc_ptr);
+    pr_info("[DAI] Data from user: %s\n", mdev.kmalloc_ptr);
 
-    /* Updating offset */
+    /* Update offset */
     *offset += to_write;
     mdev.size = *offset;
 
@@ -124,27 +124,27 @@ static ssize_t m_write(struct file *filp, const char __user *user_buf, size_t si
 static int __init
 hello_init(void)
 {
-    printk(KERN_INFO "Hello Kernel Module\n");
+    printk(KERN_INFO "[DAI] Hello Kernel Module\n");
 
     /* Step 1: Dynamic allocating device number */
     if (alloc_chrdev_region(&mdev.dev_num, 0, 1, "m_devnum") < 0)
     {
-        pr_err("Failed to alloc chrdev region\n");
+        pr_err("[DAI] Failed to alloc chrdev region\n");
         return -1;
     }
-    pr_info("Major = %d Minor = %d\n", MAJOR(mdev.dev_num), MINOR(mdev.dev_num));
+    pr_info("[DAI] Major = %d Minor = %d\n", MAJOR(mdev.dev_num), MINOR(mdev.dev_num));
 
     /* Step 2: Create struct class*/
     if ((mdev.class = class_create(THIS_MODULE, "m_class")) == NULL)
     {
-        pr_err("Cannot create the struct class for my device\n");
+        pr_err("[DAI] Cannot create the struct class for my device\n");
         goto rm_device_numb;
     }
 
     /* Step 3: Create device*/
     if ((device_create(mdev.class, NULL, mdev.dev_num, NULL, "m_device")) == NULL)
     {
-        pr_err("Cannot create my device\n");
+        pr_err("[DAI] Cannot create my device\n");
         goto rm_class;
     }
 
@@ -154,14 +154,14 @@ hello_init(void)
     /* Step 4.2: Add character device to system */
     if ((cdev_add(&mdev.m_cdev, mdev.dev_num, 1)) < 0)
     {
-        pr_err("Cannot add the device to the system\n");
+        pr_err("[DAI] Cannot add the device to the system\n");
         goto rm_device;
     }
 
     /* Step 5: Create kernel buffer */
-    if (mdev.kmalloc_ptr = kmalloc(1024, GFP_KERNEL), mdev.kmalloc_ptr == 0)
+    if (mdev.kmalloc_ptr = kmalloc(NPAGES * PAGE_SIZE, GFP_KERNEL), mdev.kmalloc_ptr == 0)
     {
-        pr_err("Can not allocate memory in kernel\n");
+        pr_err("[DAI] Can not allocate memory in kernel\n");
         goto rm_cdev;
     }
     return 0;
@@ -200,7 +200,7 @@ static void __exit hello_exit(void)
     /* Unallocate device number */
     unregister_chrdev_region(mdev.dev_num, 1);
 
-    printk(KERN_INFO "Goodbye\n");
+    printk(KERN_INFO "[DAI] Goodbye\n");
 }
 
 module_init(hello_init);
