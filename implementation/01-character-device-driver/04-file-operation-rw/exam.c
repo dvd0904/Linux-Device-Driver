@@ -1,6 +1,6 @@
 /*
-    @brief:
-    @author:
+    @brief: File operations with character driver
+    @author: Nguyen Dinh Dai
  */
 
 /**********************************************************************************
@@ -22,7 +22,8 @@
 #define DRIVER_DESC "Hello world kernel module"
 #define DRIVER_VERS "1.0"
 
-#define NPAGES 1
+#define NPAGES  1
+#define F_SIZE  NPAGES * PAGE_SIZE
 
 /**********************************************************************************
  *                                      STRUCTURE
@@ -43,10 +44,11 @@ struct my_device
  *                                      FUNCTIONS PROTOTYPE
  **********************************************************************************/
 
-static int m_open(struct inode *inode, struct file *file);
+static int m_open(struct inode *inode, struct file *filp);
 static int m_release(struct inode *inode, struct file *file);
 static ssize_t m_read(struct file *filp, char __user *user_buf, size_t size, loff_t *offset);
 static ssize_t m_write(struct file *filp, const char *user_buf, size_t size, loff_t *offset);
+static loff_t m_llseek(struct file *filp, loff_t offset, int whence);
 
 /**********************************************************************************
  *                                      FUNCTIONS
@@ -59,10 +61,11 @@ static struct file_operations fops = {
     .write = m_write,
     .open = m_open,
     .release = m_release,
+    .llseek = m_llseek,
 };
 
 /* This function will be called when we open the Device file */
-static int m_open(struct inode *inode, struct file *file)
+static int m_open(struct inode *inode, struct file *filp)
 {
     pr_info("[DAI] System call open() called...!!!\n");
     return 0;
@@ -80,6 +83,7 @@ static ssize_t m_read(struct file *filp, char __user *user_buf, size_t size, lof
 {
     size_t to_read;
     pr_info("[DAI] System call read() called...!!!\n");
+    pr_info("[DAI] Read requested for %ld bytes.\n", size);
 
     /* Check size */
     to_read = (size > mdev.size - *offset) ? (mdev.size - *offset) : size;
@@ -101,10 +105,16 @@ static ssize_t m_write(struct file *filp, const char __user *user_buf, size_t si
     pr_info("[DAI] System call write() called...!!!\n");
 
     /* Check if number of bytes to write is bigger than MAX bytes */
-    to_write = (size + *offset > PAGE_SIZE * NPAGES) ? (PAGE_SIZE * NPAGES - *offset) : size;
+    to_write = (size + *offset > F_SIZE) ? (F_SIZE - *offset) : size;
+
+    if(!size)
+    {
+        pr_err("[DAI] No space left on this device.\n");
+        return -ENOMEM;
+    }
 
     /* Copy from user buffer to mapped aread */
-    memset(mdev.kmalloc_ptr, 0, PAGE_SIZE * NPAGES);
+    memset(mdev.kmalloc_ptr, 0, F_SIZE);
     /* use copy_from_user() to copy from user buffer to kernel
        this function is similar to strcpy in user space
     */
@@ -118,6 +128,40 @@ static ssize_t m_write(struct file *filp, const char __user *user_buf, size_t si
     mdev.size = *offset;
 
     return size;
+}
+
+static loff_t m_llseek(struct file *filp, loff_t offset, int whence)
+{
+    loff_t temp;
+    pr_info("[DAI] System call lseek() called...!!!\n");
+    pr_info("[DAI] Current file position: %lld.\n:", filp->f_pos);
+    switch(whence)
+    {
+        case SEEK_SET:
+            if(offset > F_SIZE || offset < 0)
+                return -EINVAL;
+            filp->f_pos = offset;
+            break;
+
+        case SEEK_CUR:
+            temp = filp->f_pos + offset;
+            if(temp > F_SIZE || temp < 0)
+                return -EINVAL;
+            filp->f_pos = temp;
+            break;
+
+        case SEEK_END:
+            temp = F_SIZE + offset;
+            if(temp > F_SIZE || temp < 0)
+                return -EINVAL;
+            filp->f_pos = temp;
+            break;
+
+        default:
+            return -EINVAL;
+    }
+
+    return filp->f_pos;
 }
 
 /* Constructor */
@@ -159,7 +203,7 @@ hello_init(void)
     }
 
     /* Step 5: Create kernel buffer */
-    if (mdev.kmalloc_ptr = kmalloc(NPAGES * PAGE_SIZE, GFP_KERNEL), mdev.kmalloc_ptr == 0)
+    if (mdev.kmalloc_ptr = kmalloc(F_SIZE, GFP_KERNEL), mdev.kmalloc_ptr == 0)
     {
         pr_err("[DAI] Can not allocate memory in kernel\n");
         goto rm_cdev;
